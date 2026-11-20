@@ -30,21 +30,21 @@ function normalizeItem(v) {
 function normalizeDetail(d) {
   const v = d?.verification ?? d ?? {};
   const donor = v?.donor ?? v?.donorProfile ?? d?.donor ?? {};
-  const user = donor?.user ?? v?.user ?? d?.user ?? {};
+  const user = v?.user ?? d?.user ?? donor?.user ?? {};
   const images = d?.images ?? d?.nidImages ?? v?.images ?? v?.nidImages ?? {};
   return {
     id: v?._id ?? v?.id ?? d?._id ?? d?.id,
-    name: user?.fullName ?? donor?.fullName ?? '—',
+    name: v?.fullNameAsPerNid ?? user?.fullName ?? donor?.fullName ?? '—',
     phone: user?.phone ?? '',
     email: user?.email ?? '',
     bloodGroup: donor?.bloodGroup ?? '',
-    division: donor?.division ?? '',
-    district: donor?.district ?? '',
-    dob: donor?.dateOfBirth ?? donor?.dob ?? null,
-    nidNumber: v?.nidNumber ?? donor?.nidNumber ?? null,
+    division: user?.division ?? donor?.division ?? '',
+    district: user?.district ?? donor?.district ?? '',
+    dob: v?.nidDateOfBirth ?? null,
+    nidNumber: v?.nidNumber ?? null,
     submittedAt: v?.submittedAt ?? v?.createdAt ?? null,
-    front: images?.front ?? images?.frontUrl ?? images?.nidFront ?? v?.nidFrontUrl ?? null,
-    back: images?.back ?? images?.backUrl ?? images?.nidBack ?? v?.nidBackUrl ?? null,
+    front: images?.nidUrl ?? null,
+    selfie: images?.selfieUrl ?? null,
   };
 }
 
@@ -137,7 +137,7 @@ function ReviewModal({ id, onClose, onDone }) {
   return (
     <>
       <Modal open onClose={onClose} title="Identity Verification" wide>
-        {loading ? (
+        {loading && !detail ? (
           <div className="space-y-3 py-4">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-10 animate-pulse rounded-xl bg-gray-100" />
@@ -180,7 +180,7 @@ function ReviewModal({ id, onClose, onDone }) {
                 label="Location"
                 value={[detail.district, detail.division].filter(Boolean).join(', ') || '—'}
               />
-              <InfoRow label="Date of Birth" value={safeDate(detail.dob)} />
+              <InfoRow label="Date of Birth" value={detail.dob ?? '—'} />
               {detail.nidNumber && <InfoRow label="NID Number" value={maskNid(detail.nidNumber)} />}
               <InfoRow label="Submitted" value={safeDateTime(detail.submittedAt)} />
             </div>
@@ -189,13 +189,17 @@ function ReviewModal({ id, onClose, onDone }) {
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-400">NID Documents</h4>
-                <button onClick={load} className="text-xs font-semibold text-primary hover:underline">
-                  ↻ Reload images
+                <button
+                  onClick={load}
+                  disabled={loading}
+                  className="text-xs font-semibold text-primary hover:underline disabled:cursor-wait disabled:opacity-60"
+                >
+                  {loading ? 'Reloading…' : '↻ Reload images'}
                 </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <ImagePanel label="NID Front" url={detail.front} />
-                <ImagePanel label="NID Back" url={detail.back} />
+                <ImagePanel key={detail.front ?? 'nid-front'} label="NID Front" url={detail.front} />
+                <ImagePanel key={detail.selfie ?? 'selfie'} label="Selfie holding NID" url={detail.selfie} />
               </div>
               <p className="mt-2 text-[11px] text-gray-400">
                 🔒 Secure signed links — expire ~10 minutes after loading. Click an image to view full size.
