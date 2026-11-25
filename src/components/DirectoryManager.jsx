@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { getAdmin } from '@/lib/auth';
 import { formatDate, timeAgo } from '@/lib/format';
 import { DIVISIONS } from '@/constants/options';
 import PageHeader from '@/components/PageHeader';
@@ -23,7 +24,7 @@ function normalizeItem(x) {
     division: x?.division ?? x?.location?.division ?? '',
     district: x?.district ?? x?.location?.district ?? '',
     address: x?.address ?? x?.location?.address ?? '',
-    phone: x?.phone ?? x?.contactNumber ?? x?.contact?.phone ?? '',
+    phone: x?.contactNumber ?? x?.phone ?? x?.contact?.phone ?? '',
     email: x?.email ?? x?.contact?.email ?? '',
     website: x?.website ?? x?.websiteUrl ?? '',
     isVerified: !!(x?.isVerified ?? x?.verified),
@@ -45,17 +46,22 @@ const EMPTY_FORM = {
 };
 
 function buildPayload(f) {
+  // Align with documented admin directory create/update fields:
+  // required name,address,division,district; optional contactNumber,latitude,longitude,isVerified (+availableGroups for blood banks)
   const p = {
     name: f.name.trim(),
+    address: f.address.trim(),
     division: f.division,
     district: f.district.trim(),
-    isVerified: f.isVerified,
-    isActive: f.isActive,
+    isVerified: !!f.isVerified,
   };
-  if (f.address.trim()) p.address = f.address.trim();
-  if (f.phone.trim()) p.phone = f.phone.trim();
+  const contactNumber = f.phone.trim();
+  if (contactNumber) p.contactNumber = contactNumber;
+  // Keep legacy/common fields for compatibility with overlapping handlers/allowlists
+  if (contactNumber) p.phone = contactNumber;
   if (f.email.trim()) p.email = f.email.trim();
   if (f.website.trim()) p.website = f.website.trim();
+  if (typeof f.isActive === 'boolean') p.isActive = f.isActive;
   return p;
 }
 
@@ -95,6 +101,7 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
     form.name.trim().length > 0 &&
     form.division.length > 0 &&
     form.district.trim().length > 0 &&
+    form.address.trim().length > 0 &&
     (!form.email.trim() || /^\S+@\S+\.\S+$/.test(form.email.trim()));
 
   const save = async () => {
@@ -104,7 +111,13 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
     try {
       const payload = buildPayload(form);
       if (editing) {
-        await api.put(`${apiBase}/${editing.id}`, payload);
+        // PUT targets adminDirectory update handler; PATCH targets admin.routes handler (overlapping routes).
+        // Try PUT first, fall back to PATCH for compatibility.
+        try {
+          await api.put(`${apiBase}/${editing.id}`, payload);
+        } catch (e) {
+          await api.patch(`${apiBase}/${editing.id}`, payload);
+        }
       } else {
         await api.post(apiBase, payload);
       }
@@ -143,7 +156,7 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
           <Field label="District" required>
             <input className="input w-full" value={form.district} onChange={set('district')} placeholder="e.g. Dhaka" />
           </Field>
-          <Field label="Address" full>
+          <Field label="Address" required full>
             <input
               className="input w-full"
               value={form.address}
@@ -195,6 +208,8 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
 }
 
 export default function DirectoryManager({ apiBase, singular, plural, icon }) {
+  const admin = getAdmin();
+  const canManage = admin?.role === 'super_admin' || admin?.role === 'content_admin';
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
@@ -234,14 +249,22 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
       if (verified) params.set('isVerified', verified);
 
       const res = await api.get(`${apiBase}?${params.toString()}`);
-      const d = res?.data ?? {};
-      const list = d.items ?? d.hospitals ?? d.bloodBanks ?? d.results ?? [];
-      setRows(list.map(normalizeItem));
-      const p = d.pagination ?? {};
+      // Directory endpoints may not use the standard {success,statusCode,message,data} envelope
+      let d = res?.data ?? res ?? {};
+      if (Array.isArray(d)) d = { items: d };
+      if (Array.isArray(res) && !Array.isArray(res?.data)) d = { items: res };
+      const list =
+        d.items ??
+        d.hospitals ??
+        d.bloodBanks ??
+        d.results ??
+        (Array.isArray(res?.data) ? res.data : []);
+      setRows((Array.isArray(list) ? list : []).map(normalizeItem));
+      const p = d.pagination ?? res?.pagination ?? {};
       setPagination({
         page: p.page ?? page,
-        totalPages: p.totalPages ?? 1,
-        total: p.total ?? list.length,
+        totalPages: p.totalPages ?? p.pages ?? 1,
+        total: p.total ?? p.count ?? (Array.isArray(list) ? list.length : 0),
       });
     } catch (err) {
       setError(err?.message ?? `Failed to load ${plural.toLowerCase()}.`);
@@ -255,13 +278,18 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
   }, [fetchList]);
 
   const toggleVerify = async (row) => {
+    if (!canManage) return;
     setBusyId(row.id);
     setError('');
     try {
       try {
         await api.patch(`${apiBase}/${row.id}/verify`, { isVerified: !row.isVerified });
       } catch {
-        await api.put(`${apiBase}/${row.id}`, { isVerified: !row.isVerified });
+        try {
+          await api.put(`${apiBase}/${row.id}`, { isVerified: !row.isVerified });
+        } catch {
+          await api.patch(`${apiBase}/${row.id}`, { isVerified: !row.isVerified });
+        }
       }
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, isVerified: !r.isVerified } : r)));
       setNotice(`${row.name} ${row.isVerified ? 'unverified' : 'verified ✓'}.`);
@@ -273,7 +301,7 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
   };
 
   const doDelete = async () => {
-    if (!deleting || deleteBusy) return;
+    if (!canManage || !deleting || deleteBusy) return;
     setDeleteBusy(true);
     try {
       await api.del(`${apiBase}/${deleting.id}`);
@@ -354,36 +382,39 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
     {
       key: 'actions',
       label: '',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => toggleVerify(r)}
-            disabled={busyId === r.id}
-            className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${
-              r.isVerified
-                ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            }`}
-          >
-            {busyId === r.id ? '…' : r.isVerified ? 'Unverify' : 'Verify ✓'}
-          </button>
-          <button
-            onClick={() => {
-              setEditing(r);
-              setFormOpen(true);
-            }}
-            className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => setDeleting(r)}
-            className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
-          >
-            Delete
-          </button>
-        </div>
-      ),
+      render: (r) =>
+        canManage ? (
+          <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => toggleVerify(r)}
+              disabled={busyId === r.id}
+              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${
+                r.isVerified
+                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              {busyId === r.id ? '…' : r.isVerified ? 'Unverify' : 'Verify ✓'}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(r);
+                setFormOpen(true);
+              }}
+              className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => setDeleting(r)}
+              className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+            >
+              Delete
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs text-gray-400">View only</span>
+        ),
     },
   ];
 
@@ -393,15 +424,17 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
         <button onClick={fetchList} className="btn-outline text-sm">
           ↻ Refresh
         </button>
-        <button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-          className="btn-primary text-sm"
-        >
-          + Add {singular}
-        </button>
+        {canManage && (
+          <button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+            className="btn-primary text-sm"
+          >
+            + Add {singular}
+          </button>
+        )}
       </PageHeader>
 
       {notice && (
@@ -467,11 +500,15 @@ export default function DirectoryManager({ apiBase, singular, plural, icon }) {
         rowKey="id"
         emptyIcon={icon}
         emptyTitle={`No ${plural.toLowerCase()} found`}
-        emptyText={`Click "+ Add ${singular}" to create the first entry.`}
-        onRowClick={(r) => {
-          setEditing(r);
-          setFormOpen(true);
-        }}
+        emptyText={canManage ? `Click "+ Add ${singular}" to create the first entry.` : `No ${plural.toLowerCase()} available.`}
+        onRowClick={
+          canManage
+            ? (r) => {
+                setEditing(r);
+                setFormOpen(true);
+              }
+            : undefined
+        }
       />
 
       <Pagination page={pagination.page} totalPages={pagination.totalPages} total={pagination.total} onPage={setPage} />

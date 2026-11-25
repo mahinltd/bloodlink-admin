@@ -16,6 +16,16 @@ function normalizeAnalytics(res) {
   const donations = d.donations ?? {};
   const queues = d.queues ?? {};
 
+  // Doc: requests = { active, sosActive, completed, cancelled, expired, total } (no byStatus array)
+  const requestsByStatus = Array.isArray(requests.byStatus)
+    ? requests.byStatus
+    : [
+        { status: 'active', count: requests.active ?? 0 },
+        { status: 'completed', count: requests.completed ?? 0 },
+        { status: 'cancelled', count: requests.cancelled ?? 0 },
+        { status: 'expired', count: requests.expired ?? 0 },
+      ].filter((s) => (s.count ?? 0) > 0 || s.status === 'active' || s.status === 'completed');
+
   return {
     totalUsers: users.total ?? d.totalUsers ?? 0,
     totalDonors: users.donors ?? d.totalDonors ?? 0,
@@ -23,7 +33,7 @@ function normalizeAnalytics(res) {
     verifiedDonors: users.verified ?? d.verifiedDonors ?? 0,
     totalRequests: requests.total ?? d.totalRequests ?? 0,
     sosActive: requests.sosActive ?? requests.sos ?? 0,
-    requestsByStatus: requests.byStatus ?? [],
+    requestsByStatus,
     totalDonations: donations.total ?? d.totalDonations ?? 0,
     donationsThisMonth: donations.thisMonth ?? 0,
     bloodGroups: d.bloodGroupDistribution ?? d.bloodGroups ?? [],
@@ -37,21 +47,30 @@ function normalizeAnalytics(res) {
 function formatMemory(m) {
   if (m == null) return '—';
   if (typeof m === 'number') return `${m} MB`;
-  const v = m.heapUsed ?? m.rss ?? m.used;
+  const rss = m.rss;
+  const heap = m.heapUsed ?? m.used;
+  // Prefer heapUsed; fall back to rss. Values are MB in doc examples but handle bytes defensively.
+  const v = heap ?? rss;
   if (v == null) return '—';
   return typeof v === 'number' && v > 1048576 ? `${Math.round(v / 1048576)} MB` : `${v} MB`;
 }
 
 function normalizeHealth(res) {
   const d = res?.data ?? res ?? {};
+  const database = d.database;
+  const dbState =
+    typeof database === 'string'
+      ? database
+      : database?.status ?? database?.state ?? d.dbState ?? 'unknown';
+  const notifications = d.notifications24h ?? d.last24h ?? {};
   return {
-    dbState: d.dbState ?? d.database?.status ?? 'unknown',
-    uptime: d.uptime ?? '—',
-    onlineUsers: d.onlineUsers ?? 0,
-    pushes: d.last24h?.pushes ?? d.last24h?.pushSent ?? 0,
-    emails: d.last24h?.emails ?? d.last24h?.emailSent ?? 0,
+    dbState,
+    uptime: d.uptime ?? d.api?.uptime ?? '—',
+    onlineUsers: d.socket?.onlineUsers ?? d.onlineUsers ?? 0,
+    pushes: notifications.pushSent ?? notifications.pushes ?? 0,
+    emails: notifications.emailsSent ?? notifications.emails ?? 0,
     memoryMB: d.memoryMB ?? null,
-    cronJobs: d.cronJobs ?? [],
+    cronJobs: Array.isArray(d.cronJobs) ? d.cronJobs : [],
   };
 }
 

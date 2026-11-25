@@ -109,17 +109,16 @@ function ConfigPanel() {
     setError('');
     try {
       const payload = {};
-      TEXT_FIELDS.forEach(({ key }) => {
-        const v = String(form[key] ?? '').trim();
-        if (v) payload[key] = v;
-      });
-      NUMBER_FIELDS.forEach(({ key }) => {
-        const n = parseInt(form[key], 10);
-        if (!Number.isNaN(n) && n >= 0) payload[key] = n;
-      });
-      BOOL_FIELDS.forEach(({ key }) => {
-        payload[key] = !!form[key];
-      });
+      // API supports: appName, logoUrl, primaryColor, secondaryColor, supportEmail,
+      // maintenanceMode, maintenanceMessage, featureFlags, onboarding
+      const supportEmail = String(form.supportEmail ?? '').trim();
+      if (supportEmail) payload.supportEmail = supportEmail;
+      if (typeof form.maintenanceMode === 'boolean') payload.maintenanceMode = form.maintenanceMode;
+      if (Object.keys(payload).length === 0) {
+        setError('No supported config fields to update.');
+        setSaving(false);
+        return;
+      }
       await api.put('/admin/config', payload);
       setNotice('Config updated successfully ✓');
       await load();
@@ -232,11 +231,15 @@ function normalizeVersion(d) {
   return {
     latestVersion: v?.latestVersion ?? v?.latest?.version ?? '',
     latestVersionCode: v?.latestVersionCode ?? v?.latest?.versionCode ?? '',
+    // UI keeps "minimumVersion" (semver display) but API uses minimumSupportedVersionCode
     minimumVersion: v?.minimumVersion ?? v?.minimum?.version ?? '',
-    minimumVersionCode: v?.minimumVersionCode ?? v?.minimum?.versionCode ?? '',
-    downloadUrl: v?.downloadUrl ?? v?.apkUrl ?? '',
+    minimumVersionCode:
+      v?.minimumSupportedVersionCode ?? v?.minimumVersionCode ?? v?.minimum?.versionCode ?? '',
+    downloadUrl: v?.apkUrl ?? v?.downloadUrl ?? '',
     sha256: v?.sha256 ?? v?.sha256Hash ?? '',
     releaseNotes: v?.releaseNotes ?? v?.notes ?? '',
+    forceUpdate: !!v?.forceUpdate,
+    fileSizeMB: v?.fileSizeMB ?? '',
     updatedAt: v?.updatedAt ?? null,
   };
 }
@@ -282,16 +285,28 @@ function VersionPanel() {
 
   const validate = () => {
     const errs = [];
-    if (!SEMVER.test(form.latestVersion.trim())) errs.push('Latest version must be semver format (e.g. 1.2.0)');
-    if (!SEMVER.test(form.minimumVersion.trim())) errs.push('Minimum version must be semver format (e.g. 1.0.0)');
-    const lc = parseInt(form.latestVersionCode, 10);
-    const mc = parseInt(form.minimumVersionCode, 10);
+    if (form.latestVersion.trim() && !SEMVER.test(form.latestVersion.trim()))
+      errs.push('Latest version must be semver format (e.g. 1.2.0)');
+    // "minimumVersion" is a UI/display field; API requires minimumSupportedVersionCode instead.
+    const lc = form.latestVersionCode === '' ? NaN : parseInt(form.latestVersionCode, 10);
+    const mc = form.minimumVersionCode === '' ? NaN : parseInt(form.minimumVersionCode, 10);
     if (!Number.isInteger(lc) || lc < 1) errs.push('Latest version code must be a positive integer');
-    if (!Number.isInteger(mc) || mc < 1) errs.push('Minimum version code must be a positive integer');
+    if (!Number.isInteger(mc) || mc < 0) errs.push('Minimum supported version code must be a non-negative integer');
     if (Number.isInteger(lc) && Number.isInteger(mc) && lc < mc)
-      errs.push('Latest version code cannot be lower than minimum version code');
+      errs.push('Latest version code cannot be lower than minimum supported version code');
+    if (form.downloadUrl.trim()) {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(form.downloadUrl.trim());
+      } catch {
+        errs.push('APK Download URL must be a valid URL');
+      }
+    }
     if (form.sha256.trim() && !SHA256_RE.test(form.sha256.trim()))
       errs.push('SHA-256 must be exactly 64 hex characters');
+    if (String(form.releaseNotes || '').length > 2000) errs.push('Release notes must be at most 2000 characters');
+    if (form.fileSizeMB !== '' && (Number.isNaN(Number(form.fileSizeMB)) || Number(form.fileSizeMB) < 0))
+      errs.push('File size (MB) must be a non-negative number');
     setValidationErrors(errs);
     return errs.length === 0;
   };
@@ -302,14 +317,16 @@ function VersionPanel() {
     setSaving(true);
     try {
       const payload = {
-        latestVersion: form.latestVersion.trim(),
         latestVersionCode: parseInt(form.latestVersionCode, 10),
-        minimumVersion: form.minimumVersion.trim(),
-        minimumVersionCode: parseInt(form.minimumVersionCode, 10),
+        minimumSupportedVersionCode: parseInt(form.minimumVersionCode, 10),
       };
-      if (form.downloadUrl.trim()) payload.downloadUrl = form.downloadUrl.trim();
+      if (form.latestVersion.trim()) payload.latestVersion = form.latestVersion.trim();
+      if (form.downloadUrl.trim()) payload.apkUrl = form.downloadUrl.trim();
       if (form.sha256.trim()) payload.sha256 = form.sha256.trim();
-      if (form.releaseNotes.trim()) payload.releaseNotes = form.releaseNotes.trim();
+      if (String(form.releaseNotes || '').trim()) payload.releaseNotes = String(form.releaseNotes).trim();
+      if (typeof form.forceUpdate === 'boolean') payload.forceUpdate = form.forceUpdate;
+      if (form.fileSizeMB !== '' && !Number.isNaN(Number(form.fileSizeMB)))
+        payload.fileSizeMB = Number(form.fileSizeMB);
       await api.put('/admin/app-version', payload);
       setNotice('App version updated ✓ — users will see the update prompt.');
       await load();

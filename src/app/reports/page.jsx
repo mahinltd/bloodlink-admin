@@ -12,7 +12,7 @@ import Modal from '@/components/Modal';
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'pending', label: 'Pending' },
-  { value: 'under_review', label: 'Under Review' },
+  { value: 'reviewing', label: 'Under Review' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'dismissed', label: 'Dismissed' },
 ];
@@ -24,6 +24,7 @@ const safeAgo = (v) => (v ? timeAgo(v) : '');
 function normalizeReport(r) {
   const reporter = r?.reporter ?? r?.reportedBy ?? r?.from ?? {};
   const target = r?.reportedUser ?? r?.reported ?? r?.against ?? r?.target ?? {};
+  const rawStatus = String(r?.status ?? 'pending').toLowerCase();
   return {
     id: r?._id ?? r?.id,
     reporterName: reporter?.fullName ?? reporter?.name ?? '—',
@@ -32,7 +33,7 @@ function normalizeReport(r) {
     targetPhone: target?.phone ?? '',
     reason: String(r?.reason ?? r?.category ?? r?.type ?? '—'),
     description: r?.description ?? r?.details ?? r?.message ?? '',
-    status: String(r?.status ?? 'pending').toLowerCase(),
+    status: rawStatus === 'under_review' ? 'reviewing' : rawStatus,
     adminNotes: r?.adminNotes ?? r?.notes ?? '',
     createdAt: r?.createdAt ?? null,
   };
@@ -53,18 +54,24 @@ function PersonCard({ label, name, phone, danger }) {
 }
 
 function ReportDetail({ report, onClose, onSaved }) {
-  const [status, setStatus] = useState(report.status);
+  const initialStatus = ['reviewing', 'resolved', 'dismissed'].includes(report.status)
+    ? report.status
+    : 'reviewing';
+  const [status, setStatus] = useState(initialStatus);
   const [notes, setNotes] = useState(report.adminNotes);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const dirty = status !== report.status || notes !== report.adminNotes;
+  const dirty = status !== initialStatus || notes !== report.adminNotes;
 
   const save = async () => {
     setSaving(true);
     setError('');
     try {
-      await api.patch(`/admin/reports/${report.id}`, { status, adminNotes: notes.trim() });
+      await api.patch(`/admin/reports/${report.id}`, {
+        status,
+        adminNotes: notes.trim() || undefined,
+      });
       onSaved?.({ ...report, status, adminNotes: notes.trim() });
     } catch (err) {
       setError(err?.message ?? 'Failed to save.');
@@ -102,7 +109,11 @@ function ReportDetail({ report, onClose, onSaved }) {
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-500">Update Status</label>
             <select className="input w-full sm:w-56" value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+              {[
+                { value: 'reviewing', label: 'Under Review' },
+                { value: 'resolved', label: 'Resolved' },
+                { value: 'dismissed', label: 'Dismissed' },
+              ].map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

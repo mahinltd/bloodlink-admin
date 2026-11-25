@@ -127,8 +127,10 @@ export default function DonorsPage() {
       render: (d) => (
         <button
           onClick={() => {
+            const allowed = ['available', 'unavailable', 'paused'];
+            const current = d.availabilityStatus || 'available';
             setTarget(d);
-            setNewStatus(d.availabilityStatus || 'available');
+            setNewStatus(allowed.includes(current) ? current : 'available');
             setModalError('');
           }}
           className="rounded-lg border border-ink/10 px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-primary hover:text-primary"
@@ -211,9 +213,13 @@ export default function DonorsPage() {
         <select
           value={newStatus}
           onChange={(e) => setNewStatus(e.target.value)}
-          className="input mt-4"
+          className="input mt-3"
         >
-          {AVAILABILITY_OPTIONS.map((o) => (
+          {[
+            { value: 'available', label: 'Available' },
+            { value: 'unavailable', label: 'Unavailable' },
+            { value: 'paused', label: 'Paused' },
+          ].map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>

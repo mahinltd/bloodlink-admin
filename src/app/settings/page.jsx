@@ -84,7 +84,7 @@ export default function SettingsPage() {
     setError('');
     setBusy(true);
     try {
-      await api.post('/admin/auth/2fa/enable', { otp, token: otp, code: otp });
+      await api.post('/admin/auth/2fa/enable', { code: otp });
       setEnabled(true);
       setSetupData(null);
       setOtp('');

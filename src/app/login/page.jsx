@@ -69,10 +69,6 @@ export default function LoginPage() {
         method: 'POST',
         body: {
           pendingToken,
-          tempToken: pendingToken,
-          twoFactorToken: pendingToken,
-          otp,
-          token: otp,
           code: otp,
         },
         auth: false,
