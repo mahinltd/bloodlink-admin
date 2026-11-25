@@ -51,15 +51,16 @@ function RawPreview({ data }) {
   );
 }
 
-// Docs/02-ADMIN-API.md: app config is merged/persisted in backend AppConfig singleton.
-// Supported fields: appName, logoUrl, primaryColor, secondaryColor, supportEmail,
-// maintenanceMode, maintenanceMessage, featureFlags, onboarding.
+// App config is persisted via PUT /admin/config and served by public config endpoints.
+// Includes documented branding/maintenance/feature/onboarding fields plus apkDownloadUrl
+// for the public website/app download CTA.
 const CONFIG_DEFAULTS = {
   appName: '',
   logoUrl: '',
   primaryColor: '#B71C1C',
   secondaryColor: '#111827',
   supportEmail: '',
+  apkDownloadUrl: '',
   maintenanceMode: false,
   maintenanceMessage: '',
   featureFlags: {},
@@ -81,6 +82,7 @@ function normalizeConfig(raw) {
     primaryColor: c.primaryColor ?? '#B71C1C',
     secondaryColor: c.secondaryColor ?? '#111827',
     supportEmail: c.supportEmail ?? '',
+    apkDownloadUrl: c.apkDownloadUrl ?? c.appDownloadLink ?? c.appDownloadUrl ?? c.apkUrl ?? '',
     maintenanceMode: !!c.maintenanceMode,
     maintenanceMessage: c.maintenanceMessage ?? '',
     featureFlags: normalizeFeatureFlags(c.featureFlags),
@@ -168,6 +170,7 @@ function ConfigPanel() {
         primaryColor: form.primaryColor.trim(),
         secondaryColor: form.secondaryColor.trim(),
         supportEmail: form.supportEmail.trim(),
+        apkDownloadUrl: form.apkDownloadUrl.trim(),
         maintenanceMode: !!form.maintenanceMode,
         maintenanceMessage: form.maintenanceMessage.trim(),
         featureFlags: normalizeFeatureFlags(form.featureFlags),
@@ -201,7 +204,7 @@ function ConfigPanel() {
       {notice && <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</div>}
       {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
 
-      <Card title="Branding & Support" subtitle="Fields documented by PUT /admin/config">
+      <Card title="Branding & Support" subtitle="Branding, support, and public app download settings">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="App Name">
             <input className="input w-full" value={form.appName} onChange={set('appName')} placeholder="BloodLink" />
@@ -211,6 +214,15 @@ function ConfigPanel() {
           </Field>
           <Field label="Logo URL" full>
             <input className="input w-full" value={form.logoUrl} onChange={set('logoUrl')} placeholder="https://..." />
+          </Field>
+          <Field label="App APK/Build Download URL" full hint="Direct download URL for the mobile app (Cloudinary, Cloudflare, CDN, etc.). Saved in app config and served by public config for the website.">
+            <input
+              className="input w-full"
+              type="url"
+              value={form.apkDownloadUrl}
+              onChange={set('apkDownloadUrl')}
+              placeholder="https://cdn.example.com/bloodlink.apk"
+            />
           </Field>
           <Field label="Primary Color" hint="Hex/CSS color used by app config.">
             <div className="flex gap-2">
