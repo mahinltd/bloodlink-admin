@@ -19,6 +19,7 @@ export const MENU_ITEMS = [
   { href: '/config', label: 'App Config', icon: '⚙️', roles: ['super_admin', 'content_admin'] },
   { href: '/broadcast', label: 'Broadcast', icon: '📢', roles: ['super_admin', 'support_admin'] },
   { href: '/audit-logs', label: 'Audit Logs', icon: '📜', roles: ['super_admin', 'monitoring_admin'] },
+  { href: '/admins', label: 'Admins', icon: '🛡️', roles: ['super_admin'] },
 ];
 
 export function canAccess(role, item) {

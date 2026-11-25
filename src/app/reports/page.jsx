@@ -17,6 +17,17 @@ const STATUS_OPTIONS = [
   { value: 'dismissed', label: 'Dismissed' },
 ];
 
+const CATEGORY_OPTIONS = [
+  { value: '', label: 'All Categories' },
+  { value: 'fake_request', label: 'Fake Request' },
+  { value: 'fake_donor', label: 'Fake Donor' },
+  { value: 'commercial_selling', label: 'Commercial Selling' },
+  { value: 'harassment', label: 'Harassment' },
+  { value: 'abuse', label: 'Abuse' },
+  { value: 'suspicious', label: 'Suspicious' },
+  { value: 'other', label: 'Other' },
+];
+
 const safeDate = (v) => (v ? formatDate(v) : '—');
 const safeDateTime = (v) => (v ? formatDateTime(v) : '—');
 const safeAgo = (v) => (v ? timeAgo(v) : '');
@@ -151,6 +162,7 @@ export default function ReportsPage() {
   const [notice, setNotice] = useState('');
 
   const [status, setStatus] = useState('');
+  const [category, setCategory] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
 
@@ -164,8 +176,10 @@ export default function ReportsPage() {
     setLoading(true);
     setError('');
     try {
+      // Docs: status, category, page, limit
       const params = new URLSearchParams({ page: String(page), limit: '15' });
       if (status) params.set('status', status);
+      if (category) params.set('category', category);
 
       const res = await api.get(`/admin/reports?${params.toString()}`);
       const d = res?.data ?? {};
@@ -182,7 +196,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, category]);
 
   useEffect(() => {
     fetchReports();
@@ -253,6 +267,21 @@ export default function ReportsPage() {
           }}
         >
           {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="input w-full sm:w-56"
+          value={category}
+          onChange={(e) => {
+            setCategory(e.target.value);
+            setPage(1);
+          }}
+        >
+          {CATEGORY_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>

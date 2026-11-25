@@ -149,29 +149,26 @@ export default function AuditLogsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [action, setAction] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [adminId, setAdminId] = useState('');
+  const [debouncedAdminId, setDebouncedAdminId] = useState('');
   const [page, setPage] = useState(1);
 
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    const t = setTimeout(() => setDebouncedAdminId(adminId.trim()), 400);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [adminId]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      // Docs: action prefix, adminId, page, limit
       const params = new URLSearchParams({ page: String(page), limit: '20' });
-      if (debouncedSearch) params.set('search', debouncedSearch);
       if (action) params.set('action', action);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
+      if (debouncedAdminId) params.set('adminId', debouncedAdminId);
 
       const res = await api.get(`/admin/audit-logs?${params.toString()}`);
       const d = res?.data ?? {};
@@ -188,7 +185,7 @@ export default function AuditLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, action, from, to]);
+  }, [page, action, debouncedAdminId]);
 
   useEffect(() => {
     fetchLogs();
@@ -220,10 +217,8 @@ export default function AuditLogsPage() {
   };
 
   const clearFilters = () => {
-    setSearch('');
     setAction('');
-    setFrom('');
-    setTo('');
+    setAdminId('');
     setPage(1);
   };
 
@@ -283,15 +278,6 @@ export default function AuditLogsPage() {
 
       {/* filters */}
       <div className="card mb-5 flex flex-wrap items-center gap-3 p-4">
-        <input
-          className="input w-full sm:w-56"
-          placeholder="Search admin name / email…"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-        />
         <select
           className="input"
           value={action}
@@ -306,28 +292,16 @@ export default function AuditLogsPage() {
             </option>
           ))}
         </select>
-        <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            className="input"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value);
-              setPage(1);
-            }}
-          />
-          <span className="text-xs text-gray-400">→</span>
-          <input
-            type="date"
-            className="input"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value);
-              setPage(1);
-            }}
-          />
-        </div>
-        {(search || action || from || to) && (
+        <input
+          className="input w-full sm:w-56"
+          placeholder="Search admin ID…"
+          value={adminId}
+          onChange={(e) => {
+            setAdminId(e.target.value);
+            setPage(1);
+          }}
+        />
+        {(action || adminId) && (
           <button onClick={clearFilters} className="text-xs font-semibold text-primary hover:underline">
             ✕ Clear filters
           </button>

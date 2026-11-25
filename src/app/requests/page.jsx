@@ -3,22 +3,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { formatDate, formatDateTime, timeAgo } from '@/lib/format';
-import { BLOOD_GROUPS, DIVISIONS } from '@/constants/options';
 import PageHeader from '@/components/PageHeader';
 import DataTable from '@/components/DataTable';
 import StatusBadge from '@/components/StatusBadge';
 import Pagination from '@/components/Pagination';
 import Modal from '@/components/Modal';
 
+// Documented request statuses/filters in docs/02-ADMIN-API.md and docs/04-DATA-MODELS.md
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
-  { value: 'active', label: 'Active' },
   { value: 'pending', label: 'Pending' },
-  { value: 'fulfilled', label: 'Fulfilled' },
-  { value: 'expired', label: 'Expired' },
+  { value: 'searching_donors', label: 'Searching Donors' },
+  { value: 'donor_responded', label: 'Donor Responded' },
+  { value: 'donor_confirmed', label: 'Donor Confirmed' },
+  { value: 'blood_arranged', label: 'Blood Arranged' },
+  { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'rejected', label: 'Rejected' },
-  { value: 'closed', label: 'Closed' },
+  { value: 'expired', label: 'Expired' },
 ];
 
 const URGENCY_OPTIONS = [
@@ -28,33 +30,33 @@ const URGENCY_OPTIONS = [
   { value: 'regular', label: 'Regular' },
 ];
 
-const opt = (o) =>
-  typeof o === 'string' ? { value: o, label: o } : { value: o.value ?? '', label: o.label ?? o.name ?? '' };
+const TERMINAL_REQUEST_STATUSES = new Set(['completed', 'cancelled', 'rejected', 'expired']);
 
 const safeDate = (v) => (v ? formatDate(v) : '—');
 const safeDateTime = (v) => (v ? formatDateTime(v) : '—');
 const safeAgo = (v) => (v ? timeAgo(v) : '');
 
 function normalizeRequest(r) {
-  const user = r?.requestedBy ?? r?.user ?? r?.createdBy ?? {};
+  const user = r?.requester ?? r?.requestedBy ?? r?.user ?? r?.createdBy ?? {};
   return {
     id: r?._id ?? r?.id,
+    requestId: r?.requestId ?? '',
     patientName: r?.patientName ?? r?.patient ?? '—',
     bloodGroup: r?.bloodGroup ?? r?.group ?? '—',
-    units: r?.unitsNeeded ?? r?.units ?? r?.bags ?? null,
+    units: r?.numberOfBags ?? r?.unitsNeeded ?? r?.units ?? r?.bags ?? null,
     hospital: r?.hospitalName ?? r?.hospital?.name ?? '—',
     division: r?.division ?? r?.location?.division ?? '',
     district: r?.district ?? r?.location?.district ?? '',
     urgency: String(r?.urgency ?? r?.priority ?? 'regular').toLowerCase(),
-    status: String(r?.status ?? 'active').toLowerCase(),
-    reason: r?.reason ?? r?.description ?? r?.note ?? '',
+    status: String(r?.status ?? 'pending').toLowerCase(),
+    reason: r?.medicalProblem ?? r?.reason ?? r?.description ?? r?.additionalNotes ?? '',
     contact: r?.contactNumber ?? r?.phone ?? user?.phone ?? '',
-    requiredBy: r?.requiredBy ?? r?.neededBy ?? null,
+    requiredBy: r?.requiredDate && r?.requiredTime ? `${r.requiredDate} ${r.requiredTime}` : r?.requiredBy ?? r?.neededBy ?? null,
     expiresAt: r?.expiresAt ?? null,
     createdAt: r?.createdAt ?? null,
     requesterName: user?.fullName ?? user?.name ?? '—',
     requesterPhone: user?.phone ?? '',
-    responses: r?.responseCount ?? r?.responses?.length ?? null,
+    responses: r?.interestedCount ?? r?.responseCount ?? r?.responses?.length ?? null,
   };
 }
 
@@ -154,7 +156,7 @@ function RequestDetail({ id, onClose, onChanged }) {
     }
   };
 
-  const canModerate = detail && ['active', 'pending'].includes(detail.status);
+  const canModerate = detail && !TERMINAL_REQUEST_STATUSES.has(detail.status);
   const left = detail ? timeLeft(detail.expiresAt) : null;
 
   return (
@@ -288,9 +290,7 @@ export default function RequestsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [status, setStatus] = useState('');
-  const [bloodGroup, setBloodGroup] = useState('');
   const [urgency, setUrgency] = useState('');
-  const [division, setDivision] = useState('');
   const [page, setPage] = useState(1);
 
   const [selectedId, setSelectedId] = useState(null);
@@ -310,12 +310,11 @@ export default function RequestsPage() {
     setLoading(true);
     setError('');
     try {
+      // Docs: status, urgency, search, page, limit
       const params = new URLSearchParams({ page: String(page), limit: '15' });
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (status) params.set('status', status);
-      if (bloodGroup) params.set('bloodGroup', bloodGroup);
       if (urgency) params.set('urgency', urgency);
-      if (division) params.set('division', division);
 
       const res = await api.get(`/admin/requests?${params.toString()}`);
       const d = res?.data ?? {};
@@ -332,7 +331,7 @@ export default function RequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, status, bloodGroup, urgency, division]);
+  }, [page, debouncedSearch, status, urgency]);
 
   useEffect(() => {
     fetchRequests();
@@ -418,34 +417,12 @@ export default function RequestsPage() {
             </option>
           ))}
         </select>
-        <select className="input" value={bloodGroup} onChange={onFilter(setBloodGroup)}>
-          <option value="">All Groups</option>
-          {BLOOD_GROUPS.map((g) => {
-            const o = opt(g);
-            return (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            );
-          })}
-        </select>
         <select className="input" value={urgency} onChange={onFilter(setUrgency)}>
           {URGENCY_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
-        </select>
-        <select className="input" value={division} onChange={onFilter(setDivision)}>
-          <option value="">All Divisions</option>
-          {DIVISIONS.map((d) => {
-            const o = opt(d);
-            return (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            );
-          })}
         </select>
       </div>
 

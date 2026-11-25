@@ -42,12 +42,12 @@ export default function BroadcastPage() {
         audience,
       });
       const d = res?.data ?? {};
-      const count = d.sent ?? d.recipients ?? d.recipientCount ?? d.delivered;
-      setNotice(
-        typeof count === 'number'
-          ? `Broadcast sent to ~${count.toLocaleString()} devices 🚀`
-          : 'Broadcast sent 🚀'
-      );
+      const sent = d.sent ?? d.recipients ?? d.recipientCount ?? d.delivered;
+      const pushSent = d.pushSent;
+      const parts = [];
+      if (typeof sent === 'number') parts.push(`${sent.toLocaleString()} users targeted`);
+      if (typeof pushSent === 'number') parts.push(`${pushSent.toLocaleString()} push deliveries attempted`);
+      setNotice(parts.length > 0 ? `Broadcast sent: ${parts.join(' • ')} 🚀` : 'Broadcast sent 🚀');
       setTitle('');
       setBody('');
       setConfirming(false);

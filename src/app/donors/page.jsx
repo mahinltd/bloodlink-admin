@@ -7,13 +7,12 @@ import DataTable from '@/components/DataTable';
 import Pagination from '@/components/Pagination';
 import StatusBadge from '@/components/StatusBadge';
 import Modal from '@/components/Modal';
-import { DIVISIONS, BLOOD_GROUPS, AVAILABILITY_OPTIONS } from '@/constants/options';
+import { BLOOD_GROUPS, AVAILABILITY_OPTIONS } from '@/constants/options';
 import { formatDate, getInitials } from '@/lib/format';
 
 export default function DonorsPage() {
   const [search, setSearch] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
-  const [division, setDivision] = useState('');
   const [availability, setAvailability] = useState('');
   const [verified, setVerified] = useState('');
   const [page, setPage] = useState(1);
@@ -33,10 +32,10 @@ export default function DonorsPage() {
     setLoading(true);
     setError('');
     try {
+      // Docs: bloodGroup, availability, verified, search, page, limit
       const qs = new URLSearchParams();
       if (search) qs.set('search', search);
       if (bloodGroup) qs.set('bloodGroup', bloodGroup);
-      if (division) qs.set('division', division);
       if (availability) qs.set('availability', availability);
       if (verified) qs.set('verified', verified);
       qs.set('page', String(page));
@@ -56,13 +55,13 @@ export default function DonorsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, bloodGroup, division, availability, verified, page]);
+  }, [search, bloodGroup, availability, verified, page]);
 
   useEffect(() => {
     const t = setTimeout(() => load(), search ? 400 : 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, bloodGroup, division, availability, verified, page]);
+  }, [search, bloodGroup, availability, verified, page]);
 
   const saveAvailability = async () => {
     if (!target) return;
@@ -157,10 +156,6 @@ export default function DonorsPage() {
           <select value={bloodGroup} onChange={(e) => { setPage(1); setBloodGroup(e.target.value); }} className="input sm:w-32">
             <option value="">All Groups</option>
             {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
-          </select>
-          <select value={division} onChange={(e) => { setPage(1); setDivision(e.target.value); }} className="input sm:w-40">
-            <option value="">All Divisions</option>
-            {DIVISIONS.map((dv) => <option key={dv} value={dv}>{dv}</option>)}
           </select>
           <select value={availability} onChange={(e) => { setPage(1); setAvailability(e.target.value); }} className="input sm:w-44">
             <option value="">All Availability</option>

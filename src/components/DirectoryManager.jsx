@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { getAdmin } from '@/lib/auth';
 import { formatDate, timeAgo } from '@/lib/format';
-import { DIVISIONS } from '@/constants/options';
+import { DIVISIONS, BLOOD_GROUPS } from '@/constants/options';
 import PageHeader from '@/components/PageHeader';
 import DataTable from '@/components/DataTable';
 import Pagination from '@/components/Pagination';
@@ -25,10 +25,9 @@ function normalizeItem(x) {
     district: x?.district ?? x?.location?.district ?? '',
     address: x?.address ?? x?.location?.address ?? '',
     phone: x?.contactNumber ?? x?.phone ?? x?.contact?.phone ?? '',
-    email: x?.email ?? x?.contact?.email ?? '',
-    website: x?.website ?? x?.websiteUrl ?? '',
     isVerified: !!(x?.isVerified ?? x?.verified),
     isActive: x?.isActive !== undefined ? !!x.isActive : x?.active !== undefined ? !!x.active : true,
+    availableGroups: Array.isArray(x?.availableGroups) ? x.availableGroups : [],
     createdAt: x?.createdAt ?? null,
   };
 }
@@ -38,16 +37,14 @@ const EMPTY_FORM = {
   division: '',
   district: '',
   address: '',
-  phone: '',
-  email: '',
-  website: '',
+  contactNumber: '',
   isVerified: false,
-  isActive: true,
+  availableGroups: [],
 };
 
-function buildPayload(f) {
-  // Align with documented admin directory create/update fields:
-  // required name,address,division,district; optional contactNumber,latitude,longitude,isVerified (+availableGroups for blood banks)
+function buildPayload(f, { includeAvailableGroups = false } = {}) {
+  // Aligned with docs/02-ADMIN-API.md: name, address, division, district required;
+  // optional contactNumber, latitude, longitude, isVerified; blood bank accepts availableGroups.
   const p = {
     name: f.name.trim(),
     address: f.address.trim(),
@@ -55,13 +52,9 @@ function buildPayload(f) {
     district: f.district.trim(),
     isVerified: !!f.isVerified,
   };
-  const contactNumber = f.phone.trim();
+  const contactNumber = String(f.contactNumber ?? '').trim();
   if (contactNumber) p.contactNumber = contactNumber;
-  // Keep legacy/common fields for compatibility with overlapping handlers/allowlists
-  if (contactNumber) p.phone = contactNumber;
-  if (f.email.trim()) p.email = f.email.trim();
-  if (f.website.trim()) p.website = f.website.trim();
-  if (typeof f.isActive === 'boolean') p.isActive = f.isActive;
+  if (includeAvailableGroups) p.availableGroups = Array.isArray(f.availableGroups) ? f.availableGroups : [];
   return p;
 }
 
@@ -77,18 +70,17 @@ function Field({ label, required, full, children }) {
 }
 
 function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
+  const isBloodBank = apiBase.includes('blood-bank');
   const [form, setForm] = useState(() =>
     editing
       ? {
-          name: editing.name,
-          division: editing.division,
-          district: editing.district,
-          address: editing.address,
-          phone: editing.phone,
-          email: editing.email,
-          website: editing.website,
-          isVerified: editing.isVerified,
-          isActive: editing.isActive,
+          name: editing.name ?? '',
+          division: editing.division ?? '',
+          district: editing.district ?? '',
+          address: editing.address ?? '',
+          contactNumber: editing.phone ?? '',
+          isVerified: !!editing.isVerified,
+          availableGroups: Array.isArray(editing.availableGroups) ? editing.availableGroups : [],
         }
       : EMPTY_FORM
   );
@@ -96,26 +88,33 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
   const [error, setError] = useState('');
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const toggleGroup = (group) => {
+    setForm((f) => {
+      const has = f.availableGroups.includes(group);
+      return {
+        ...f,
+        availableGroups: has ? f.availableGroups.filter((g) => g !== group) : [...f.availableGroups, group],
+      };
+    });
+  };
 
   const valid =
     form.name.trim().length > 0 &&
     form.division.length > 0 &&
     form.district.trim().length > 0 &&
-    form.address.trim().length > 0 &&
-    (!form.email.trim() || /^\S+@\S+\.\S+$/.test(form.email.trim()));
+    form.address.trim().length > 0;
 
   const save = async () => {
     if (!valid || saving) return;
     setSaving(true);
     setError('');
     try {
-      const payload = buildPayload(form);
+      const payload = buildPayload(form, { includeAvailableGroups: isBloodBank });
       if (editing) {
-        // PUT targets adminDirectory update handler; PATCH targets admin.routes handler (overlapping routes).
-        // Try PUT first, fall back to PATCH for compatibility.
+        // Docs note overlapping admin directory routes: try PUT (adminDirectory) then PATCH (admin.routes).
         try {
           await api.put(`${apiBase}/${editing.id}`, payload);
-        } catch (e) {
+        } catch {
           await api.patch(`${apiBase}/${editing.id}`, payload);
         }
       } else {
@@ -164,31 +163,43 @@ function EntryForm({ apiBase, singular, editing, onClose, onSaved }) {
               placeholder="Street address / area"
             />
           </Field>
-          <Field label="Phone">
-            <input className="input w-full" value={form.phone} onChange={set('phone')} placeholder="01XXXXXXXXX" />
-          </Field>
-          <Field label="Email">
+          <Field label="Contact Number">
             <input
               className="input w-full"
-              type="email"
-              value={form.email}
-              onChange={set('email')}
-              placeholder="info@example.com"
+              value={form.contactNumber}
+              onChange={set('contactNumber')}
+              placeholder="01XXXXXXXXX"
             />
           </Field>
-          <Field label="Website" full>
-            <input className="input w-full" value={form.website} onChange={set('website')} placeholder="https://…" />
-          </Field>
         </div>
+
+        {isBloodBank && (
+          <div>
+            <label className="mb-2 block text-xs font-semibold text-gray-500">Available Blood Groups</label>
+            <div className="flex flex-wrap gap-2">
+              {BLOOD_GROUPS.map((group) => {
+                const active = form.availableGroups.includes(group);
+                return (
+                  <button
+                    key={group}
+                    type="button"
+                    onClick={() => toggleGroup(group)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                      active ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {group}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-6 rounded-2xl border border-gray-100 bg-gray-50/60 px-4 py-3">
           <label className="flex items-center gap-3">
             <Toggle checked={form.isVerified} onChange={(v) => setForm((f) => ({ ...f, isVerified: v }))} />
             <span className="text-sm font-medium text-ink">Verified ✓</span>
-          </label>
-          <label className="flex items-center gap-3">
-            <Toggle checked={form.isActive} onChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
-            <span className="text-sm font-medium text-ink">Active (visible in app & website)</span>
           </label>
         </div>
 

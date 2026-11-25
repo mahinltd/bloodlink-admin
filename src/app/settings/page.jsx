@@ -88,27 +88,10 @@ export default function SettingsPage() {
       setEnabled(true);
       setSetupData(null);
       setOtp('');
-      setNotice('Two-Factor Authentication enabled ✓ — পরের login থেকে code লাগবে।');
+      setNotice('Two-Factor Authentication enabled ✓ — you will need a code on your next login.');
       if (admin) saveAdmin({ ...admin, twoFactorEnabled: true });
     } catch (err) {
-      setError(err?.message ?? 'Invalid code — আবার চেষ্টা করুন।');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disable = async () => {
-    if (otp.length !== 6) return;
-    setError('');
-    setBusy(true);
-    try {
-      await api.post('/admin/auth/2fa/disable', { otp, token: otp, code: otp });
-      setEnabled(false);
-      setOtp('');
-      setNotice('2FA disabled.');
-      if (admin) saveAdmin({ ...admin, twoFactorEnabled: false });
-    } catch (err) {
-      setError(err?.message ?? 'Invalid code.');
+      setError(err?.message ?? 'Invalid code — please try again.');
     } finally {
       setBusy(false);
     }
@@ -136,7 +119,7 @@ export default function SettingsPage() {
           <div>
             <h3 className="font-display text-base font-bold text-ink">🔐 Two-Factor Authentication (2FA)</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Login-এ password-এর সাথে Google Authenticator-এর ৬-সংখ্যার code লাগবে।
+              Add an authenticator-app code requirement to your admin login.
             </p>
           </div>
           {enabled ? (
@@ -151,7 +134,6 @@ export default function SettingsPage() {
         </div>
 
         <div className="mt-5 border-t border-gray-100 pt-5">
-          {/* ── OFF → enable flow ── */}
           {!enabled && !setupData && !backendMissing && (
             <button onClick={startSetup} disabled={busy} className="btn-primary text-sm disabled:opacity-50">
               {busy ? 'Loading…' : 'Enable 2FA →'}
@@ -160,7 +142,8 @@ export default function SettingsPage() {
 
           {backendMissing && (
             <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              ⚠️ Backend-এ 2FA setup endpoint পাওয়া যায়নি। এটা আমাকে জানান — backend-এ endpoint যোগ করে দেব।
+              ⚠️ The 2FA setup endpoint was not found on the backend. Please confirm the backend deployment includes the
+              documented admin 2FA routes.
             </div>
           )}
 
@@ -168,13 +151,12 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600">
                 <li>
-                  ফোনে <strong>Google Authenticator</strong> (বা Authy) install করুন
+                  Install <strong>Google Authenticator</strong> (or Authy) on your phone.
                 </li>
-                <li>নিচের QR code-টা scan করুন</li>
-                <li>App-এ যে ৬-সংখ্যার code আসবে, সেটা নিচে লিখে Verify চাপুন</li>
+                <li>Scan the QR code below.</li>
+                <li>Enter the 6-digit code from the app to verify and enable 2FA.</li>
               </ol>
 
-              {/* QR code — client-side generated */}
               <div className="flex justify-center rounded-2xl border border-gray-100 bg-white p-5">
                 {setupData.qr ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -183,16 +165,15 @@ export default function SettingsPage() {
                   <QRCodeSVG value={setupData.otpauthUrl} size={192} />
                 ) : (
                   <p className="py-10 text-center text-sm text-gray-400">
-                    QR তৈরি করা যায়নি — নিচের manual key ব্যবহার করুন
+                    Could not generate a QR code — use the manual key below.
                   </p>
                 )}
               </div>
 
-              {/* manual key — collapsed, আর বড় হয়ে দেখাবে না */}
               {setupData.secret && (
                 <details className="rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-2.5">
                   <summary className="cursor-pointer text-xs font-semibold text-gray-500">
-                    QR scan করা যাচ্ছে না? Manual entry key দেখুন
+                    Can&apos;t scan the QR code? Show manual entry key
                   </summary>
                   <p className="mt-2 select-all break-all text-center font-mono text-sm font-bold tracking-widest text-ink">
                     {setupData.secret}
@@ -220,6 +201,7 @@ export default function SettingsPage() {
                   onClick={() => {
                     setSetupData(null);
                     setOtp('');
+                    setError('');
                   }}
                   className="btn-outline text-sm"
                 >
@@ -229,27 +211,10 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* ── ON → disable flow ── */}
           {enabled && (
-            <div className="space-y-3">
-              <p className="text-sm text-gray-600">2FA বন্ধ করতে Authenticator app-এর current code-টা দিন:</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  className="input w-40 text-center font-mono text-lg tracking-[0.4em]"
-                  maxLength={6}
-                  inputMode="numeric"
-                  placeholder="••••••"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                />
-                <button
-                  onClick={disable}
-                  disabled={otp.length !== 6 || busy}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-                >
-                  {busy ? 'Verifying…' : 'Disable 2FA'}
-                </button>
-              </div>
+            <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              2FA is enabled for this admin account. If you need to disable it, follow your backend/admin recovery
+              procedure. This panel only exposes the documented 2FA setup and enable endpoints.
             </div>
           )}
 
